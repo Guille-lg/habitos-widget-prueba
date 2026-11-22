@@ -1,0 +1,50 @@
+name: Prueba de widget para iPhone
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: iphone-widget-build
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: python3 scripts/generate_project.py
+      - name: Test water storage and concurrent writes
+        run: |
+          mkdir -p build
+          swiftc Shared/WaterLedger.swift Tests/main.swift -o build/ledger-tests
+          build/ledger-tests
+      - name: Build app and widget for iPhone
+        run: |
+          set -o pipefail
+          xcodebuild -project Habitos.xcodeproj -scheme Habitos -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tee build/xcodebuild.log
+      - name: Package for SideStore
+        run: |
+          set -euo pipefail
+          mkdir -p build/package/Payload
+          cp -R build/DerivedData/Build/Products/Release-iphoneos/Habitos.app build/package/Payload/
+          APP=build/package/Payload/Habitos.app
+          test -d "$APP/PlugIns/AguaWidget.appex"
+          codesign --force --sign - --entitlements Configuration/Habitos.entitlements --generate-entitlement-der "$APP/PlugIns/AguaWidget.appex"
+          codesign --force --sign - --entitlements Configuration/Habitos.entitlements --generate-entitlement-der "$APP"
+          codesign -d --entitlements :- "$APP/PlugIns/AguaWidget.appex"
+          cd build/package
+          /usr/bin/zip -q -r ../Habitos.ipa Payload
+      - name: Upload installable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Habitos-iPhone
+          path: build/Habitos.ipa
+          retention-days: 2
+      - name: Upload build log if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build/xcodebuild.log
+          retention-days: 2

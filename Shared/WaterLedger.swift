@@ -36,7 +36,9 @@ struct WaterLedger {
     @discardableResult
     func record(_ halfLiters: Int, at date: Date = Date()) throws -> Int {
         guard halfLiters == 1 || halfLiters == -1 else { throw LedgerError.invalidAmount }
-        if halfLiters < 0 && (try count(on: date)) == 0 { return 0 }
+        if halfLiters < 0 {
+            if try count(on: date) == 0 { return 0 }
+        }
         let event = Event(id: UUID(), timestamp: date, halfLiters: halfLiters)
         let folder = directory(for: date)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
